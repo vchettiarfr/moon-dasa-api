@@ -1,7 +1,5 @@
-
 from fastapi import FastAPI, Query
 from datetime import datetime
-import swisseph as swe
 
 app = FastAPI()
 
@@ -11,11 +9,6 @@ nakshatras = [
     "Hasta", "Chitra", "Swati", "Vishakha", "Anuradha", "Jyeshtha",
     "Mula", "Purva Ashadha", "Uttara Ashadha", "Shravana", "Dhanishta", "Shatabhisha",
     "Purva Bhadrapada", "Uttara Bhadrapada", "Revati"
-]
-
-vimshottari_order = [
-    ("Ketu", 7), ("Venus", 20), ("Sun", 6), ("Moon", 10), ("Mars", 7),
-    ("Rahu", 18), ("Jupiter", 16), ("Saturn", 19), ("Mercury", 17)
 ]
 
 planet_to_nakshatras = {
@@ -35,6 +28,14 @@ for planet, naks in planet_to_nakshatras.items():
     for nak in naks:
         nakshatra_to_planet[nak] = planet
 
+def approximate_moon_longitude(dt: datetime) -> float:
+    # Approximate: Moon moves ~13.2 degrees per day
+    base_date = datetime(2025, 4, 28)
+    days_diff = (dt - base_date).days
+    base_moon_deg = 40.0  # Approx starting near Rohini (40 deg)
+    moon_deg = (base_moon_deg + 13.2 * days_diff) % 360
+    return moon_deg
+
 @app.get("/moon_nakshatra_dasa")
 def get_moon_nakshatra_dasa(
     date: str = Query(..., example="2025-04-29T18:00"),
@@ -42,25 +43,19 @@ def get_moon_nakshatra_dasa(
     longitude: float = Query(..., example=2.2)
 ):
     dt = datetime.fromisoformat(date)
-    jd = swe.julday(dt.year, dt.month, dt.day, dt.hour + dt.minute / 60.0)
-    swe.set_topo(longitude, latitude, 0)
-    moon_lon, _ = swe.calc_ut(jd, swe.MOON)[0:2]
+
+    moon_lon = approximate_moon_longitude(dt)
 
     nak_index = int(moon_lon // (360 / 27))
     pada = int((moon_lon % (360 / 27)) // (360 / 108)) + 1
     nakshatra = nakshatras[nak_index]
 
-    dasa_planet = nakshatra_to_planet[nakshatra]
-    appearance_count = 0
-
-    # Get Bukti using the planet's sky-ordered nakshatras
-    planet_naks = planet_to_nakshatras[dasa_planet]
-    bukti_index = appearance_count % len(planet_naks)
-    bukti = planet_naks[bukti_index]
+    dasa_planet = nakshatra_to_planet.get(nakshatra, "Unknown")
+    bukti = planet_to_nakshatras.get(dasa_planet, ["Unknown"])[0]
 
     return {
         "nakshatra": nakshatra,
-        "moon_longitude": round(moon_lon, 4),
+        "moon_longitude": round(moon_lon, 2),
         "pada": pada,
         "dasa": dasa_planet,
         "bukti": bukti,
